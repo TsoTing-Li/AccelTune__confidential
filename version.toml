@@ -1,0 +1,52 @@
+[project]
+name = "AccelTune-micro-service-version"
+version = "v0.1.0"
+description = "micro service version management"
+
+[docker.info]
+username = "innodiskorg"
+base_repo = "acceltune"
+
+[services.api-service]
+name = "api-service"
+version = "v0.1.0"
+
+[services.fine-tuning-tool]
+name = "fine-tuning-tool"
+version = "v0.1.0"
+
+[services.quantization-service]
+name = "quantization-service"
+version = "v0.1.0"
+
+[services.quantization-gguf-tool]
+name = "quantization-gguf-tool"
+version = "v0.1.0"
+
+[services.eval-tool]
+name = "eval-tool"
+version = "v0.0.0"
+
+[services.hardware-monitor]
+name = "hardware-monitor"
+version = "v0.1.0"
+
+[shared.vllm]
+name = "vllm"
+version = "v0.6.3_P1_cu-12.1.1"
+
+[shared.ollama]
+name = "ollama"
+version = "v0.1"
+
+[thirdparty.redis]
+name = "redis"
+version = "7.2.4"
+
+[thirdparty.nginx]
+name = "nginx"
+version = "1.25"
+
+[frontend]
+name = "website"
+version = "v100"
