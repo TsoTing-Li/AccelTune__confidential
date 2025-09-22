@@ -143,7 +143,8 @@ jobs:
 
       - name: Upload zipped release
         run: |
-          zip -r "AccelTune-release-${{ matrix.release_file_os }}-${{ env.RELEASE_VERSION }}.zip" "${{ env.RELEASE_FOLDER }}"
+          cd $(dirname "${{ env.RELEASE_FOLDER }}")
+          zip -r "AccelTune-release-${{ matrix.release_file_os }}-${{ env.RELEASE_VERSION }}.zip" "$(basename ${{ env.RELEASE_FOLDER }})"
 
       - name: Create GitHub Release
         id: create_release
