@@ -84,7 +84,7 @@ services:
       start_period: 15s
 
   hardware-monitor:
-    image: ${USER_NAME}/${REPOSITORY}-${HARDWARE_MONITOR_NAME}:${HARDWARE_MONITOR_TAG}
+    image: ${USER_NAME}/${HARDWARE_MONITOR_NAME}:${HARDWARE_MONITOR_TAG}
     container_name: ${HARDWARE_MONITOR_CONTAINER_NAME}
     env_file:
       - .env
