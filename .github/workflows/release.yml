@@ -75,13 +75,13 @@ jobs:
       matrix:
         include:
           - 
-            docker_image_name: "python3:3.11.9-bullseye"
+            docker_image_name: "python:3.11.9-bullseye"
             release_file_os: "ubuntu_2004"
-          -
+          - 
             docker_image_name: "python:3.11.9-bullseye"
             release_file_os: "ubuntu_2204"
-          -
-            docker_image_name: "python:3.11.9.bookworm"
+          - 
+            docker_image_name: "python:3.11.9-bookworm"
             release_file_os: "ubuntu_2404"
     steps:
       - name: Checkout repo
@@ -110,7 +110,7 @@ jobs:
       - name: Prepare release directory
         run: |
           ROOT=$(pwd)
-          
+
           cd dist/acceltune-api-service
           cp -r nginx redis saves src static "${{ env.RELEASE_FOLDER }}"
           cp LICENSE app.py "${{ env.RELEASE_FOLDER }}"
