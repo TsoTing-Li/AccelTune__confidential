@@ -92,6 +92,7 @@ jobs:
         run: |
           api_service_version=$(python3 -c "import tomllib; print(tomllib.load(open('version.toml', 'rb'))['services']['api-service']['version'])")
           echo "API_SERVICE_VERSION=$api_service_version" >> $GITHUB_OUTPUT
+          echo "API_SERVICE_PATH=dist/acceltune-api-service" >> $GITHUB_OUTPUT
 
       - name: Clone api service repo
         uses: actions/checkout@v4
@@ -99,11 +100,11 @@ jobs:
           repository: TsoTing-Li/acceltune-api-service
           token: ${{ secrets.PAT_TOKEN }}
           ref: ${{ steps.get_api_service_version.outputs.API_SERVICE_VERSION }}
-          path: dist/acceltune-api-service
+          path: ${{ steps.get_api_service_version.outputs.API_SERVICE_PATH }}
 
       - name: Create release folder
         run: |
-          release_folder="AccelTune_${{ env.RELEASE_VERSION }}"
+          release_folder="$GITHUB_WORKSPACE/AccelTune_${{ env.RELEASE_VERSION }}"
           mkdir -p "$release_folder"
           echo "RELEASE_FOLDER=$release_folder" >> $GITHUB_ENV
 
@@ -125,7 +126,7 @@ jobs:
         run: |
           ROOT=$(pwd)
 
-          cd dist/acceltune-api-service
+          cd ${{ steps.get_api_service_version.outputs.API_SERVICE_PATH }}
           cp -r nginx redis saves src static "${{ env.RELEASE_FOLDER }}"
           cp LICENSE app.py "${{ env.RELEASE_FOLDER }}"
 
