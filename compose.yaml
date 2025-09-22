@@ -1,0 +1,143 @@
+name: acceltune
+
+networks:
+  acceltune:
+    name: ${PROJECT_NAME}
+    driver: bridge
+
+services:
+  api-service:
+    image: ${USER_NAME}/${REPOSITORY}-${API_SERVICE_NAME}:${API_SERVICE_TAG}
+    container_name: ${API_SERVICE_CONTAINER_NAME}
+    env_file:
+      - .env
+    networks:
+      - ${PROJECT_NAME}
+    volumes:
+      - ${PROJECT_ROOT_PATH}:/app
+      - ${HF_HOME}:${HF_HOME}
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+     - redis
+     - quantization-service
+     - hardware-monitor
+    expose:
+      - ${API_SERVICE_PORT}
+    ipc: host
+    stdin_open: true
+    tty: true
+    command: uvicorn app:app --host ${API_SERVICE_HOST} --port ${API_SERVICE_PORT}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${API_SERVICE_PORT}/health/"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  redis:
+    image: ${REDIS_NAME}:${REDIS_TAG}
+    container_name: ${REDIS_CONTAINER_NAME}
+    volumes:
+      - ${PROJECT_ROOT_PATH}/${REDIS_LOCAL_DB_PATH}:/data
+    env_file:
+      - .env
+    networks:
+      - ${PROJECT_NAME}
+    command: >
+      sh -c "mkdir -p ${PWD}/${REDIS_LOCAL_DB_PATH} &&
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --dir /data
+      --dbfilename redis_snapshot.rdb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  quantization-service:
+    image: ${USER_NAME}/${REPOSITORY}-${QUANTIZATION_SERVICE_NAME}:${QUANTIZATION_SERVICE_TAG}
+    container_name: ${QUANTIZATION_SERVICE_CONTAINER_NAME}
+    env_file:
+      - .env
+    volumes:
+      - ${PROJECT_ROOT_PATH}/logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    ipc: host
+    networks:
+      - ${PROJECT_NAME}
+    stdin_open: true
+    tty: true
+    command: uvicorn src.app:quantize_api --host ${QUANTIZATION_SERVICE_HOST} --port ${QUANTIZATION_SERVICE_PORT}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${QUANTIZATION_SERVICE_PORT}/health/"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  hardware-monitor:
+    image: ${USER_NAME}/${REPOSITORY}-${HARDWARE_MONITOR_NAME}:${HARDWARE_MONITOR_TAG}
+    container_name: ${HARDWARE_MONITOR_CONTAINER_NAME}
+    env_file:
+      - .env
+    privileged: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /dev:/dev
+      - ${MOUNT_PATH}:${MOUNT_PATH}
+    networks:
+      - ${PROJECT_NAME}
+    runtime: nvidia
+    restart: always
+
+  nginx:
+    image: nginx:${NGINX_TAG}
+    container_name: ${NGINX_CONTAINER_NAME}
+    environment:
+     - API_SERVICE_PORT=${API_SERVICE_PORT}
+     - NGINX_PORT=${NGINX_PORT}
+    volumes:
+     - /etc/localtime:/etc/localtime:ro
+     - ${PROJECT_ROOT_PATH}/nginx/nginx.default.template:/etc/nginx/templates/default.conf.template
+    expose:
+      - ${NGINX_PORT}
+    networks:
+      - ${PROJECT_NAME}
+    depends_on:
+      - api-service
+    restart: always
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  website:
+    image: ${USER_NAME}/${REPOSITORY}-${WEBSITE_NAME}:${WEBSITE_TAG}
+    container_name: ${WEBSITE_CONTAINER_NAME}
+    environment:
+      - NGINX_PORT=${WEBSITE_PORT}
+      - DATA_PORT=${NGINX_PORT}
+      - DATA_SERVER=${NGINX_CONTAINER_NAME}
+    networks:
+      - ${PROJECT_NAME}
+    depends_on:
+      - nginx
+    ports:
+      - ${WEBSITE_PORT}:${WEBSITE_PORT}
