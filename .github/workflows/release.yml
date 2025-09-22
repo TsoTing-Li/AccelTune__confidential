@@ -1,0 +1,138 @@
+name: Release AccelTune
+on: 
+  workflow_dispatch:
+    
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      RELEASE_VERSION: ${{ steps.validate_version.outputs.VALIDATE_VERSION }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Check version from pyproject.toml and version.toml
+        id: check_version
+        run: |
+          PYPROJECT_TOML_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          VERSION_TOML_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('version.toml', 'rb'))['project']['version'])")
+          if [ "$PYPROJECT_TOML_VERSION" != "$VERSION_TOML_VERSION" ]; then
+            echo "Version mismatch between pyproject.toml ($PYPROJECT_TOML_VERSION) and version.toml ($VERSION_TOML_VERSION)"
+            exit 1
+          fi
+
+          echo "VERSION=$PYPROJECT_TOML_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Validate version with regex
+        id: validate_version
+        run: |
+          echo "Input version: ${{ steps.check_version.outputs.VERSION }}"
+          if [[ "${{ steps.check_version.outputs.VERSION }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version is valid"
+          else
+            echo "Invalid version format. Please use 'vX.Y.Z' format."
+            exit 1
+          fi
+
+          echo "VALIDATE_VERSION=${{ steps.check_version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+          echo "Validated version: ${{ steps.check_version.outputs.VERSION }}"
+
+      - name: Check existing GitHub release
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/${{ steps.validate_version.outputs.VALIDATE_VERSION }}$"; then
+            echo "Tag ${{ steps.validate_version.outputs.VALIDATE_VERSION }} already exists."
+            exit 1
+          else
+            echo "RELEASE_VERSION=${{ steps.validate_version.outputs.VALIDATE_VERSION }}" >> $GITHUB_ENV
+            echo "RELEASE_VERSION=${{ steps.validate_version.outputs.VALIDATE_VERSION }}" >> $GITHUB_OUTPUT
+          fi
+
+  checkout-api-service:
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Get api-service version from version.toml
+        id: get_api_service_version
+        run: |
+          api_service_version=$(python3 -c "import tomllib; print(tomllib.load(open('version.toml', 'rb'))['services']['api-service']['version'])")
+          echo "API_SERVICE_VERSION=$api_service_version" >> $GITHUB_OUTPUT
+      
+      - name: Clone api service repo
+        uses: actions/checkout@v4
+        with:
+          repository: TsoTing-Li/acceltune-api-service
+          token: ${{ secrets.PAT_TOKEN }}
+          ref: ${{ steps.get_api_service_version.outputs.API_SERVICE_VERSION }}
+          path: dist/acceltune-api-service
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, checkout-api-service]
+    strategy:
+      matrix:
+        include:
+          - 
+            docker_image_name: "python3:3.11.9-bullseye"
+            release_file_os: "ubuntu_2004"
+          -
+            docker_image_name: "python:3.11.9-bullseye"
+            release_file_os: "ubuntu_2204"
+          -
+            docker_image_name: "python:3.11.9.bookworm"
+            release_file_os: "ubuntu_2404"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create release folder
+        run: |
+          release_folder="AccelTune_${{ env.RELEASE_VERSION }}"
+          mkdir -p "$release_folder"
+          echo "RELEASE_FOLDER=$release_folder" >> $GITHUB_ENV
+
+      - name: Install Python and PyInstaller
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ${{ matrix.docker_image_name }} bash -c "\
+              apt update && \
+              apt install -y gcc build-essential && \
+              pip install pyinstaller httpx transformers datasets huggingface_hub anyio && \
+              pyinstaller --onefile generate_env.py --distpath dist/${{ matrix.release_file_os }} && \
+              pyinstaller --onefile pull_all_images.py --distpath dist/${{ matrix.release_file_os }} && \
+              pyinstaller --onefile download_require_files.py --distpath dist/${{ matrix.release_file_os }}
+            "
+      
+      - name: Prepare release directory
+        run: |
+          ROOT=$(pwd)
+          
+          cd dist/acceltune-api-service
+          cp -r nginx redis saves src static "${{ env.RELEASE_FOLDER }}"
+          cp LICENSE app.py "${{ env.RELEASE_FOLDER }}"
+
+          cd $ROOT
+          cp .env.template LICENSE README.md compose.yaml pyproject.toml version.toml "${{ env.RELEASE_FOLDER }}"
+
+          cp dist/${{ matrix.release_file_os }}/generate_env ${{ env.RELEASE_FOLDER }}/generate_env_${{ matrix.release_file_os }}
+          cp dist/${{ matrix.release_file_os }}/pull_all_images ${{ env.RELEASE_FOLDER }}/pull_all_images_${{ matrix.release_file_os }}
+          cp dist/${{ matrix.release_file_os }}/download_require_files ${{ env.RELEASE_FOLDER }}/download_require_files_${{ matrix.release_file_os }}
+
+      - name: Upload zipped release
+        run: |
+          zip -r "AccelTune-release-${{ matrix.release_file_os }}-${{ env.RELEASE_VERSION }}.zip" "${{ env.RELEASE_FOLDER }}"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          tag_name: ${{ env.RELEASE_VERSION }}
+          name: ${{ env.RELEASE_VERSION }}
+          draft: false
+          prerelease: false
+          files: AccelTune-release-${{ matrix.release_file_os }}-${{ env.RELEASE_VERSION }}.zip
